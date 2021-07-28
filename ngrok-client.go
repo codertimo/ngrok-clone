@@ -1,4 +1,4 @@
-package main
+package mainsadfasf
 
 import (
 	"flag"
@@ -8,39 +8,56 @@ import (
 	"net"
 )
 
-var ngrokServerAddr *string = flag.String("l", "localhost:5000", "local address")
+var ngrokControlAddr *string = flag.String("l", "localhost:5001", "local address")
+var ngrokDataAddr *string = flag.String("l", "localhost:5002", "local address")
 var webServerAddr *string = flag.String("r", "localhost:8080", "remote address")
 
 func main() {
 	flag.Parse()
-	fmt.Printf("Listening: %v\nProxying: %v\n\n", *ngrokServerAddr, *webServerAddr)
+	fmt.Printf("Listening: %v\nProxying: %v\n\n", *ngrokControlAddr, *webServerAddr)
 
-	ngrokServerConn, err := net.Dial("tcp", *ngrokServerAddr)
+	controlConnection, err := net.Dial("tcp", *ngrokControlAddr)
 	if err != nil {
 		panic(err)
 	}
+	defer controlConnection.Close()
 
-	log.Println("New ngrok-server connection", ngrokServerConn.RemoteAddr())
-	ngrokServerCloser := make(chan struct{}, 2)
-	handleNgrokServerConn(ngrokServerCloser, ngrokServerConn)
-	<-ngrokServerCloser
+	log.Println("New ngrok control connection", controlConnection.RemoteAddr())
+	recvBuf := make([]byte, 4096)
+	for {
+		n, err := controlConnection.Read(recvBuf)
+		if nil != err {
+			if io.EOF == err {
+				log.Printf("connection is closed from client; %v", controlConnection.RemoteAddr().String())
+				break
+			}
+			log.Printf("fail to receive data; err: %v", err)
+			break
+		}
+		if 0 < n {
+			go handleDataTransfer()
+		}
+	}
 }
 
-func handleNgrokServerConn(ngrokServerCloser chan struct{}, ngrokServerConn net.Conn) {
-	defer ngrokServerConn.Close()
-	webServerConn, err := net.Dial("tcp", *webServerAddr)
+func handleDataTransfer() {
+	ngrokServerDataConn, err := net.Dial("tcp", *ngrokServerAddr)
 	if err != nil {
-		log.Println("error dialing remote addr", err)
-		return
+		panic(err)
 	}
-	defer webServerConn.Close()
+	defer ngrokServerDataConn.Close()
+
+	webServerDataConn, err := net.Dial("tcp", *webServerAddr)
+	if err != nil {
+		panic(err)
+	}
+	defer webServerDataConn.Close()
 
 	closer := make(chan struct{}, 2)
-	go copy(closer, ngrokServerConn, webServerConn, "server2webserver")
-	go copy(closer, webServerConn, ngrokServerConn, "webserver2server")
+	go copy(closer, ngrokServerDataConn, webServerDataConn, "server2webserver")
+	go copy(closer, webServerDataConn, ngrokServerDataConn, "webserver2server")
 	<-closer
-	log.Println("Connection complete", webServerConn.RemoteAddr())
-	ngrokServerCloser <- struct{}{}
+	log.Println("Connection complete", ngrokServerDataConn.RemoteAddr())
 }
 
 func copy(closer chan struct{}, dst io.Writer, src io.Reader, tag string) {
