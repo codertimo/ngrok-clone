@@ -7,9 +7,9 @@ import (
 	"net"
 )
 
-var ngrokControlAddr *string = flag.String("", "localhost:5000", "ngrok control address")
-var ngrokDataAddr *string = flag.String("l", "localhost:5001", "ngrok data address")
-var webServerAddr *string = flag.String("r", "localhost:8080", "webserver address")
+var ngrokControlAddr *string = flag.String("c", "localhost:5000", "ngrok control address")
+var ngrokDataAddr *string = flag.String("d", "localhost:5001", "ngrok data address")
+var webServerAddr *string = flag.String("w", "localhost:8080", "webserver address")
 
 type signal = struct{}
 
