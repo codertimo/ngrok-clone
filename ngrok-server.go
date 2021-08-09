@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -18,9 +17,9 @@ type signal = struct{}
 func main() {
 	flag.Parse()
 
-	fmt.Println("Remote Control Address:", remoteControlAddr)
-	fmt.Println("Remote Data Address:", remoteDataAddr)
-	fmt.Println("Local Address:", localAddr)
+	log.Println("Remote Control Address:", remoteControlAddr)
+	log.Println("Remote Data Address:", remoteDataAddr)
+	log.Println("Local Address:", localAddr)
 
 	dataConnChan := make(chan net.Conn)
 	go listenTCP(remoteDataAddr, func(dataConn net.Conn) {
