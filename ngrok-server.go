@@ -20,14 +20,14 @@ func main() {
 	// fmt.Printf("Listening: %v\nProxying: %v\n\n", *localAddr, *remoteAddr)
 	dataConnChan := make(chan net.Conn)
 	go listenTCP(remoteDataAddr, func(dataConn net.Conn) {
-		log.Printf("Data connection open: %v\n", *remoteDataAddr)
+		log.Printf("Data connection open: %s\n", dataConn.RemoteAddr())
 		dataConnChan <- dataConn
 	})
 
 	var remoteConn *net.Conn
 
 	go listenTCP(localAddr, func(localConn net.Conn) {
-		log.Printf("Local request: %v\n", *localAddr)
+		log.Printf("Local request: %s\n", localConn.RemoteAddr())
 
 		/* when developer request */
 		defer localConn.Close()
@@ -53,7 +53,7 @@ func main() {
 		remoteConn = &newRemoteConn
 
 		/* when user request */
-		log.Printf("Control connection open: %v\n", *remoteControlAddr)
+		log.Printf("Control connection open: %s\n", newRemoteConn.RemoteAddr())
 	})
 }
 
