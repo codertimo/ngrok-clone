@@ -7,9 +7,11 @@ import (
 	"net"
 )
 
-var ngrokControlAddr *string = flag.String("l", "localhost:5000", "ngrok")
-var ngrokDataAddr *string = flag.String("l", "localhost:5001", "local address")
-var webServerAddr *string = flag.String("r", "localhost:8080", "remote address")
+var ngrokControlAddr *string = flag.String("", "localhost:5000", "ngrok control address")
+var ngrokDataAddr *string = flag.String("l", "localhost:5001", "ngrok data address")
+var webServerAddr *string = flag.String("r", "localhost:8080", "webserver address")
+
+type signal = struct{}
 
 func main() {
 	flag.Parse()
@@ -24,7 +26,7 @@ func main() {
 		numBytes, err := ngrokControlConn.Read(recvBuf)
 		if err != nil {
 			if io.EOF == err {
-				log.Printf("connection is closed from client; %v", ngrokControlConn.RemoteAddr().String())
+				log.Printf("connection is closed from client; %v", ngrokControlConn.RemoteAddr())
 				return
 			}
 			log.Printf("fail to receive data; err: %v", err)
@@ -49,15 +51,18 @@ func conncectToNgrokServer() {
 		log.Println("error dialing remote addr", err)
 		return
 	}
-	closer := make(chan struct{}, 2)
+
+	log.Printf("data proxy start %s -> %s\n", ngrokDataConn.RemoteAddr(), webServerConn.RemoteAddr())
+	closer := make(chan signal, 2)
 	go copy(closer, ngrokDataConn, webServerConn)
 	go copy(closer, webServerConn, ngrokDataConn)
 	<-closer
 	webServerConn.Close()
 	ngrokDataConn.Close()
+	log.Printf("data proxy closed %s -> %s\n", ngrokDataConn.RemoteAddr(), webServerConn.RemoteAddr())
 }
 
-func copy(closer chan struct{}, dst io.Writer, src io.Reader) {
+func copy(closer chan signal, dst io.Writer, src io.Reader) {
 	_, _ = io.Copy(dst, src)
-	closer <- struct{}{} // connection is closed, send signal to stop proxy
+	closer <- signal{}
 }
