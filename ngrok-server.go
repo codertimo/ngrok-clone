@@ -17,20 +17,20 @@ type signal = struct{}
 func main() {
 	flag.Parse()
 
-	log.Println("Remote Control Address:", remoteControlAddr)
-	log.Println("Remote Data Address:", remoteDataAddr)
-	log.Println("Local Address:", localAddr)
+	log.Println("Remote Control Address:", *remoteControlAddr)
+	log.Println("Remote Data Address:", *remoteDataAddr)
+	log.Println("Local Address:", *localAddr)
 
 	dataConnChan := make(chan net.Conn)
 	go listenTCP(remoteDataAddr, func(dataConn net.Conn) {
-		log.Printf("Data connection open: %s\n", dataConn.RemoteAddr())
+		log.Printf("Data connection open: %s\n", dataConn.LocalAddr())
 		dataConnChan <- dataConn
 	})
 
 	var remoteConn *net.Conn
 
 	go listenTCP(localAddr, func(localConn net.Conn) {
-		log.Printf("Local request: %s\n", localConn.RemoteAddr())
+		log.Printf("Local request: %s\n", localConn.LocalAddr())
 
 		/* when developer request */
 		defer localConn.Close()
@@ -56,7 +56,7 @@ func main() {
 		remoteConn = &newRemoteConn
 
 		/* when user request */
-		log.Printf("Control connection open: %s\n", newRemoteConn.RemoteAddr())
+		log.Printf("Control connection open: %s\n", newRemoteConn.LocalAddr())
 	})
 }
 
