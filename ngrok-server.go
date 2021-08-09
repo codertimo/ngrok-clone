@@ -44,7 +44,6 @@ func main() {
 		go copy(closer, dataConn, localConn)
 		go copy(closer, localConn, dataConn)
 		<-closer
-		<-closer
 	})
 
 	listenTCP(remoteControlAddr, func(newRemoteConn net.Conn) {
