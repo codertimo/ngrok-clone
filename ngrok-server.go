@@ -5,7 +5,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"sync"
 )
 
 var remoteControlAddr *string = flag.String("c", "localhost:5000", "remote control address")
@@ -13,56 +12,49 @@ var remoteDataAddr *string = flag.String("d", "localhost:5001", "remote data add
 
 var localAddr *string = flag.String("l", "localhost:4000", "local address")
 
-var remoteConnection net.Conn = nil
-
 type signal = struct{}
 
 func main() {
 	flag.Parse()
 
 	// fmt.Printf("Listening: %v\nProxying: %v\n\n", *localAddr, *remoteAddr)
+	dataConnChan := make(chan net.Conn)
+	go listenTCP(remoteDataAddr, func(dataConn net.Conn) {
+		log.Printf("Data connection open: %v\n", *remoteDataAddr)
+		dataConnChan <- dataConn
+	})
 
-	listenTCP(remoteControlAddr, func(remoteConn net.Conn) {
-		defer remoteConn.Close()
+	var remoteConn *net.Conn
+
+	go listenTCP(localAddr, func(localConn net.Conn) {
+		log.Printf("Local request: %v\n", *localAddr)
+
+		/* when developer request */
+		defer localConn.Close()
+
+		_, err := (*remoteConn).Write([]byte("o"))
+		if err != nil {
+			panic(err)
+		}
+
+		dataConn := <-dataConnChan
+		defer dataConn.Close()
+
+		closer := make(chan signal)
+		go copy(closer, dataConn, localConn)
+		go copy(closer, localConn, dataConn)
+		<-closer
+		<-closer
+	})
+
+	listenTCP(remoteControlAddr, func(newRemoteConn net.Conn) {
+		if remoteConn != nil {
+			(*remoteConn).Close()
+		}
+		remoteConn = &newRemoteConn
 
 		/* when user request */
-		log.Printf("Remote connection open: %v\n", *remoteControlAddr)
-
-		dataConnChan := make(chan net.Conn)
-
-		var wg sync.WaitGroup
-		wg.Add(2)
-
-		go (func() {
-			defer wg.Done()
-			listenTCP(localAddr, func(localConn net.Conn) {
-				/* when developer request */
-				defer localConn.Close()
-
-				_, err := remoteConn.Write([]byte("o"))
-				if err != nil {
-					panic(err)
-				}
-
-				dataConn := <-dataConnChan
-				defer dataConn.Close()
-
-				closer := make(chan signal)
-				go copy(closer, dataConn, localConn)
-				go copy(closer, localConn, dataConn)
-				<-closer
-				<-closer
-			})
-		})()
-
-		go (func() {
-			defer wg.Done()
-			listenTCP(remoteDataAddr, func(dataConn net.Conn) {
-				dataConnChan <- dataConn
-			})
-		})()
-
-		wg.Wait()
+		log.Printf("Control connection open: %v\n", *remoteControlAddr)
 	})
 }
 
