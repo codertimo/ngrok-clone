@@ -2,42 +2,62 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"io"
 	"log"
 	"net"
 )
 
-var localAddr *string = flag.String("l", "localhost:5000", "local address")
-var remoteAddr *string = flag.String("r", "localhost:8080", "remote address")
+var ngrokControlAddr *string = flag.String("l", "localhost:5000", "ngrok")
+var ngrokDataAddr *string = flag.String("l", "localhost:5001", "local address")
+var webServerAddr *string = flag.String("r", "localhost:8080", "remote address")
 
 func main() {
 	flag.Parse()
 
-	fmt.Printf("Listening: %v\nProxying: %v\n\n", *localAddr, *remoteAddr)
-
-	listener, err := net.Listen("tcp", *localAddr)
+	ngrokControlConn, err := net.Dial("tcp", *ngrokControlAddr)
 	if err != nil {
-		panic(err)
+		log.Println("error dialing ngrok server addr", err)
+		return
 	}
+	recvBuf := make([]byte, 4096)
 	for {
-
-		log.Println("Client Connection")
-		conn, err := listener.Accept()
+		numBytes, err := ngrokControlConn.Read(recvBuf)
 		if err != nil {
-			log.Println("error accepting connection", err)
-			continue
-		}
-		go func() {
-			conn2, err := net.Dial("tcp", *remoteAddr)
-			if err != nil {
-				log.Println("error dialing remote addr", err)
+			if io.EOF == err {
+				log.Printf("connection is closed from client; %v", ngrokControlConn.RemoteAddr().String())
 				return
 			}
-			go io.Copy(conn2, conn)
-			io.Copy(conn, conn2)
-			conn2.Close()
-			conn.Close()
-		}()
+			log.Printf("fail to receive data; err: %v", err)
+			return
+		}
+		if numBytes > 0 {
+			if string(recvBuf[:numBytes]) == "o" {
+				go conncectToNgrokServer()
+			}
+		}
 	}
+}
+
+func conncectToNgrokServer() {
+	ngrokDataConn, err := net.Dial("tcp", *ngrokDataAddr)
+	if err != nil {
+		log.Println("error dialing ngrok server addr", err)
+		return
+	}
+	webServerConn, err := net.Dial("tcp", *webServerAddr)
+	if err != nil {
+		log.Println("error dialing remote addr", err)
+		return
+	}
+	closer := make(chan struct{}, 2)
+	go copy(closer, ngrokDataConn, webServerConn)
+	go copy(closer, webServerConn, ngrokDataConn)
+	<-closer
+	webServerConn.Close()
+	ngrokDataConn.Close()
+}
+
+func copy(closer chan struct{}, dst io.Writer, src io.Reader) {
+	_, _ = io.Copy(dst, src)
+	closer <- struct{}{} // connection is closed, send signal to stop proxy
 }
