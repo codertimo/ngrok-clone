@@ -77,6 +77,11 @@ func main() {
 		log.Printf("Data connection close: %s\n", dataConn.LocalAddr())
 	})
 
+	go listenTCP(remoteDataAddr, func(dataConn net.Conn) {
+		log.Printf("Data connection open: %s\n", dataConn.LocalAddr())
+		dataConnChan <- dataConn
+	}, listen)
+
 	go listenTCP(remoteControlAddr, func(newRemoteConn net.Conn) {
 		if remoteConn != nil {
 			(*remoteConn).Close()
