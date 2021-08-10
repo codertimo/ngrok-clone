@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"io"
 	"log"
@@ -12,6 +13,9 @@ var remoteDataAddr *string = flag.String("d", "localhost:5001", "remote data add
 
 var localAddr *string = flag.String("l", "localhost:4000", "local address")
 
+var certFile *string = flag.String("cert", "", "certificate file path")
+var keyFile *string = flag.String("key", "", "private key for TLS")
+
 type signal = struct{}
 
 func main() {
@@ -21,11 +25,13 @@ func main() {
 	log.Println("Remote Data Address:", *remoteDataAddr)
 	log.Println("Local Address:", *localAddr)
 
+	listen := createConnectionMaker()
+
 	dataConnChan := make(chan net.Conn)
 	go listenTCP(remoteDataAddr, func(dataConn net.Conn) {
 		log.Printf("Data connection open: %s\n", dataConn.LocalAddr())
 		dataConnChan <- dataConn
-	})
+	}, listen)
 
 	var remoteConn *net.Conn
 
@@ -47,7 +53,7 @@ func main() {
 		go copy(closer, dataConn, localConn)
 		go copy(closer, localConn, dataConn)
 		<-closer
-	})
+	}, listenRawTCP)
 
 	listenTCP(remoteControlAddr, func(newRemoteConn net.Conn) {
 		if remoteConn != nil {
@@ -57,7 +63,7 @@ func main() {
 
 		/* when user request */
 		log.Printf("Control connection open: %s\n", newRemoteConn.LocalAddr())
-	})
+	}, listen)
 }
 
 func copy(closer chan signal, dst io.Writer, src io.Reader) {
@@ -65,10 +71,32 @@ func copy(closer chan signal, dst io.Writer, src io.Reader) {
 	closer <- signal{}
 }
 
-func listenTCP(addr *string, handler func(net.Conn)) {
-	listener, err := net.Listen("tcp", *addr)
+type connectionMaker = func(*string) (net.Listener, error)
+
+func listenRawTCP(addr *string) (net.Listener, error) {
+	return net.Listen("tcp", *addr)
+}
+
+func createConnectionMaker() connectionMaker {
+	if *certFile == "" && *keyFile == "" {
+		return listenRawTCP
+	}
+
+	cer, err := tls.LoadX509KeyPair(*certFile, *keyFile)
 	if err != nil {
 		panic(err)
+	}
+
+	config := &tls.Config{Certificates: []tls.Certificate{cer}}
+	return func(addr *string) (net.Listener, error) {
+		return tls.Listen("tcp", *addr, config)
+	}
+}
+
+func listenTCP(addr *string, handler func(net.Conn), listen connectionMaker) {
+	listener, err := listen(addr)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	for {

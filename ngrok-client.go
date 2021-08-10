@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"io"
 	"log"
@@ -11,12 +12,27 @@ var ngrokControlAddr *string = flag.String("c", "localhost:5000", "ngrok control
 var ngrokDataAddr *string = flag.String("d", "localhost:5001", "ngrok data address")
 var webServerAddr *string = flag.String("w", "localhost:8080", "webserver address")
 
+var isSupportTls *bool = flag.Bool("t", false, "tls support")
+var isAllowInsecure *bool = flag.Bool("k", false, "Allow insecure server connections when using SSL")
+
 type signal = struct{}
 
 func main() {
 	flag.Parse()
 
-	ngrokControlConn, err := net.Dial("tcp", *ngrokControlAddr)
+	var dial func(*string) (net.Conn, error)
+	if *isSupportTls {
+		conf := &tls.Config{InsecureSkipVerify: *isAllowInsecure}
+		dial = func(addr *string) (net.Conn, error) {
+			return tls.Dial("tcp", *addr, conf)
+		}
+	} else {
+		dial = func(addr *string) (net.Conn, error) {
+			return net.Dial("tcp", *addr)
+		}
+	}
+
+	ngrokControlConn, err := dial(ngrokControlAddr)
 	if err != nil {
 		log.Println("error dialing ngrok server addr", err)
 		return
@@ -32,16 +48,19 @@ func main() {
 			log.Printf("fail to receive data; err: %v", err)
 			return
 		}
+
 		if numBytes > 0 {
 			if string(recvBuf[:numBytes]) == "o" {
-				go conncectToNgrokServer()
+				go conncectToNgrokServer(dial)
+			} else {
+				log.Println("wrong buf", string(recvBuf[:numBytes]))
 			}
 		}
 	}
 }
 
-func conncectToNgrokServer() {
-	ngrokDataConn, err := net.Dial("tcp", *ngrokDataAddr)
+func conncectToNgrokServer(dial func(*string) (net.Conn, error)) {
+	ngrokDataConn, err := dial(ngrokDataAddr)
 	if err != nil {
 		log.Println("error dialing ngrok server addr", err)
 		return
