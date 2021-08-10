@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"flag"
 	"fmt"
@@ -31,7 +32,10 @@ func main() {
 	var remoteConn *net.Conn
 
 	http.HandleFunc("/", func(responseWriter http.ResponseWriter, request *http.Request) {
-		// request.Proto = "HTTP/1.1"
+		request.Proto = "HTTP/1.1"
+		request.ProtoMajor = 1
+		request.ProtoMinor = 1
+
 		requestDump, err := httputil.DumpRequest(request, true)
 		log.Println(string(requestDump))
 		requestReader := bytes.NewReader(requestDump)
@@ -50,7 +54,18 @@ func main() {
 
 		closer := make(chan signal)
 		go copy(closer, dataConn, requestReader)
-		go copy(closer, responseWriter, dataConn)
+		// go copy(closer, responseWriter, dataConn)
+		response, err := http.ReadResponse(bufio.NewReader(dataConn), request)
+		for key, values := range response.Header {
+			for _, val := range values {
+				responseWriter.Header().Add(key, val)
+			}
+		}
+
+		buf := new(bytes.Buffer)
+		buf.ReadFrom(response.Body)
+		body_string := buf.String()
+		responseWriter.Write([]byte(body_string))
 		<-closer
 		log.Printf("Data connection close: %s\n", dataConn.LocalAddr())
 	})
